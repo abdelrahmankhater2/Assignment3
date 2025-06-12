@@ -1,8 +1,7 @@
-
-
-        // Global audio management
+// Global audio management - CENTRALIZED SYSTEM
         let currentMainAudio = null;
         let isMainRadioPlaying = false;
+        let audioContextInitialized = false;
 
         // Enhanced station database with audio files
         const stations = [
@@ -10,7 +9,7 @@
                 freq: '88.5 FM',
                 name: 'Salem - On Air',
                 track: 'Leadership & Love',
-                artist: 'Voices from Zayed’s Legacy',
+                artist: "Voices from Zayed's Legacy",
                 album: 'Salem - On Air • 2025',
                 genre: 'Leadership',
                 signal: 'strong',
@@ -40,7 +39,7 @@
                 signal: 'medium',
                 mode: 'STEREO',
                 spectrumPattern: 'aggressive',
-                audioFile: 'audio/naz1.mp3'
+                audioFile: 'audio/abdelrahmank.mp3'
             },
             {
                 freq: '101.5 FM',
@@ -52,12 +51,11 @@
                 signal: 'strong',
                 mode: 'HD STEREO',
                 spectrumPattern: 'dynamic',
-                audioFile: 'audio/naz1.mp3' // Default, will be changed based on choice
+                audioFile: null // Will be set based on user choice
             }
         ];
 
         let userLoveChoice = null; // Store the user's choice
-
         let currentStationIndex = 0;// Start with preset 3 (index 2
         let isScanning = false;
         let scanInterval;
@@ -65,140 +63,122 @@
         let homeKnobRotation = 0; // Track home section knob rotation
         let stationOffset = 0; 
 
-        // Audio management functions
-        function stopAllAudio() {
-            console.log('🔇 Stopping all audio...');
+        // CENTRALIZED AUDIO MANAGEMENT FUNCTIONS
+        function stopAllAudioCompletely() {
+            console.log('🔇 STOPPING ALL AUDIO COMPLETELY...');
             
-            // Stop main radio audio
-            if (currentMainAudio) {
-                currentMainAudio.pause();
-                currentMainAudio.currentTime = 0;
-                console.log('✅ Stopped main radio audio');
-            }
-            
-            // Stop all station audio elements
-            document.querySelectorAll('#home audio').forEach(audio => {
-                audio.pause();
-                audio.currentTime = 0;
+            return new Promise((resolve) => {
+                // Stop main radio audio
+                if (currentMainAudio) {
+                    currentMainAudio.pause();
+                    currentMainAudio.currentTime = 0;
+                    currentMainAudio = null;
+                    console.log('✅ Stopped main radio audio');
+                }
+                
+                // Stop all HTML audio elements
+                const allAudioElements = document.querySelectorAll('audio');
+                allAudioElements.forEach(audio => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                });
+                
+                // Stop team players specifically
+                if (typeof teamPlayers !== 'undefined') {
+                    teamPlayers.forEach(player => {
+                        if (player.isPlaying) {
+                            pauseTeamPlayer(player);
+                        }
+                    });
+                }
+                
+                isMainRadioPlaying = false;
+                updatePlayButtonState(false);
+                
+                // Give a small delay to ensure all audio is stopped
+                setTimeout(() => {
+                    console.log('✅ All audio stopped completely');
+                    resolve();
+                }, 50);
             });
-            
-            // Stop Love Radio audio elements
-            document.querySelectorAll('#ideation audio').forEach(audio => {
-                audio.pause();
-                audio.currentTime = 0;
-            });
-            
-            // Stop team player audio
-            document.querySelectorAll('#team audio').forEach(audio => {
-                audio.pause();
-                audio.currentTime = 0;
-            });
-            
-            isMainRadioPlaying = false;
-            updatePlayButtonState(false);
         }
 
-        function testAudioFile(filename) {
-            console.log(`🧪 Testing audio file: ${filename}`);
-            const testAudio = new Audio(filename);
+        async function playStationAudioSafely(stationIndex) {
+            console.log(`🎵 Safely playing station ${stationIndex}`);
             
-            testAudio.addEventListener('loadstart', () => console.log(`📥 Started loading: ${filename}`));
-            testAudio.addEventListener('canplay', () => console.log(`✅ Can play: ${filename}`));
-            testAudio.addEventListener('error', (e) => {
-                console.error(`❌ Error loading ${filename}:`, e);
-                console.error('Error details:', testAudio.error);
-            });
-            
-            testAudio.load();
-            return testAudio;
-        }
-
-        function playStationAudio(stationIndex) {
-            console.log(`🎵 Attempting to play station ${stationIndex}`);
-            stopAllAudio(); // Stop any currently playing audio
+            // First, stop everything
+            await stopAllAudioCompletely();
             
             const station = stations[stationIndex];
-            if (!station || !station.audioFile) {
-                console.error(`❌ No station or audio file for index ${stationIndex}`);
+            if (!station) {
+                console.error(`❌ No station found for index ${stationIndex}`);
+                return;
+            }
+
+            // Special handling for Love Radio (station 4 / index 3)
+            if (stationIndex === 3) {
+                if (!userLoveChoice) {
+                    console.log('💕 Love Radio selected but no choice made - staying silent');
+                    return; // Don't play anything until user makes a choice
+                }
+                
+                // Set the correct audio file based on user choice
+                station.audioFile = userLoveChoice === 'beingLoved' ? 'audio/naz1.mp3' : 'audio/naz2.mp3';
+                station.track = 'Our Choice in Love';
+                station.artist = 'Naz – Radio Istanbul Nights';
+            }
+
+            if (!station.audioFile) {
+                console.error(`❌ No audio file for station ${stationIndex}`);
                 return;
             }
             
             console.log(`🎶 Playing: ${station.audioFile} for ${station.name}`);
             
-            // Try to find an audio element with this source
-            const audioElement = document.getElementById(`station-audio-${stationIndex}`);
-            
-            if (audioElement) {
-                console.log(`📻 Using existing audio element: station-audio-${stationIndex}`);
-                currentMainAudio = audioElement;
-                currentMainAudio.volume = 0.7;
-                
-                // Add error handling
-                currentMainAudio.addEventListener('error', (e) => {
-                    console.error(`❌ Audio element error:`, e);
-                    console.error('Error details:', currentMainAudio.error);
-                });
-                
-                currentMainAudio.play().then(() => {
-                    console.log('✅ Audio started playing successfully!');
-                    isMainRadioPlaying = true;
-                    updatePlayButtonState(true);
-                }).catch(e => {
-                    console.error('❌ Audio play failed:', e);
-                    // Try alternative approach
-                    playStationAudioDirect(station.audioFile);
-                });
-            } else {
-                console.log('🔄 No existing element found, creating new audio');
-                // Fallback: create new audio element
-                playStationAudioDirect(station.audioFile);
+            // Create fresh audio element
+            const audio = new Audio(station.audioFile);
+            audio.volume = 0.7;
+            audio.preload = 'auto';
+
+            // Add error handling
+            audio.addEventListener('error', (e) => {
+                console.error(`❌ Audio error for ${station.audioFile}:`, e);
+                isMainRadioPlaying = false;
+                updatePlayButtonState(false);
+            });
+
+            // Add ended event listener
+            audio.addEventListener('ended', () => {
+                console.log(`🔚 Audio ended for ${station.name}`);
+                isMainRadioPlaying = false;
+                updatePlayButtonState(false);
+                currentMainAudio = null;
+            });
+
+            try {
+                await audio.play();
+                console.log(`✅ Successfully playing: ${station.audioFile}`);
+                currentMainAudio = audio;
+                isMainRadioPlaying = true;
+                updatePlayButtonState(true);
+            } catch (e) {
+                console.warn('🔈 Audio play blocked - waiting for user interaction', e);
+                isMainRadioPlaying = false;
+                updatePlayButtonState(false);
             }
         }
 
-        /* ───────── NEW ───────── */
-function playStationAudioDirect(audioFile) {
-    console.log(`🎵 Playing directly: ${audioFile}`);
-    const audio = new Audio(audioFile);
-    audio.volume = 0.7;
-
-    audio.addEventListener('error', e => {
-        console.error(`❌ Direct audio error for ${audioFile}:`, e);
-    });
-
-    audio.play()
-         .then(() => {
-             console.log(`✅ Direct audio playing: ${audioFile}`);
-             currentMainAudio   = audio;
-             isMainRadioPlaying = true;
-             updatePlayButtonState(true);
-         })
-         .catch(e => {
-             // -- most common reason: autoplay blocked before user gesture
-             console.warn('🔈 play() was blocked by the browser – waiting for user click.', e);
-             updatePlayButtonState(false);
-         });
-}
-
-
-        function toggleMainRadioPlayback() {
+        async function toggleMainRadioPlayback() {
             console.log('🎛️ Toggling main radio playback...');
             console.log('Currently playing:', isMainRadioPlaying);
             console.log('Current station:', currentStationIndex, stations[currentStationIndex]?.name);
             
             if (isMainRadioPlaying) {
                 console.log('⏸️ Pausing radio...');
-                stopAllAudio();
-                updatePlayButtonState(false);
+                await stopAllAudioCompletely();
             } else {
                 console.log('▶️ Starting radio...');
-                // Special handling for Love Radio (station 4)
-                if (currentStationIndex === 3 && userLoveChoice) {
-                    console.log('💕 Playing Love Radio with user choice:', userLoveChoice);
-                    playLoveRadioAudio();
-                } else {
-                    console.log('📻 Playing regular station...');
-                    playStationAudio(currentStationIndex);
-                }
+                await playStationAudioSafely(currentStationIndex);
             }
         }
 
@@ -206,14 +186,22 @@ function playStationAudioDirect(audioFile) {
             const playButton = document.querySelector('.play-button');
             const radioDisplay = document.querySelector('.radio-display');
             
-            if (playing) {
-                playButton.textContent = '⏸';
-                playButton.classList.add('playing');
-                radioDisplay.classList.add('playing');
-            } else {
-                playButton.textContent = '▶';
-                playButton.classList.remove('playing');
-                radioDisplay.classList.remove('playing');
+            if (playButton) {
+                if (playing) {
+                    playButton.textContent = '⏸';
+                    playButton.classList.add('playing');
+                } else {
+                    playButton.textContent = '▶';
+                    playButton.classList.remove('playing');
+                }
+            }
+            
+            if (radioDisplay) {
+                if (playing) {
+                    radioDisplay.classList.add('playing');
+                } else {
+                    radioDisplay.classList.remove('playing');
+                }
             }
         }
 
@@ -271,105 +259,89 @@ function playStationAudioDirect(audioFile) {
           });
         }
 
-        // Function to play the correct audio for Love Radio based on user's choice
-            function playLoveRadioAudio () {
-        console.log('💕 Playing Love Radio audio…');
-        console.log('User choice:', userLoveChoice);
+        // Enhanced station switching with proper audio management
+        async function switchToStation(index, withAnimation = true) {
+            if (index < 0 || index >= stations.length) return;
 
-        stopAllAudio();                                  // mute anything else first
+            console.log(`🔄 Switching to station ${index}`);
 
-        // select the correct Naz track
-        let audioFile;
-        if (userLoveChoice === 'beingLoved') {
-            audioFile = 'audio/naz1.mp3';
-            console.log('🎵 Playing “being loved” audio: naz1.mp3');
-        } else if (userLoveChoice === 'loving') {
-            audioFile = 'audio/naz2.mp3';
-            console.log('🎵 Playing “loving” audio: naz2.mp3');
-        } else {
-            console.warn('⚠️ No user choice made yet for Love Radio');
-            return;
+            // Always stop all audio first
+            await stopAllAudioCompletely();
+
+            const station = stations[index];
+
+            // Update display immediately
+            const updateDisplay = () => {
+                updateStationDisplay(station, index);
+                baseHeights = buildBaseSpectrum(index + 1);
+                animateSpectrum();
+            };
+
+            if (withAnimation) {
+                const radioInfo = document.querySelector('.radio-info');
+                const stationInfo = document.querySelector('.station-info');
+                if (radioInfo) radioInfo.classList.add('station-changing');
+                if (stationInfo) stationInfo.classList.add('station-changing');
+                
+                setTimeout(async () => {
+                    updateDisplay();
+                    
+                    // Only play audio if it's not Love Radio without a choice
+                    if (index !== 3 || userLoveChoice) {
+                        await playStationAudioSafely(index);
+                    }
+                    
+                    if (radioInfo) radioInfo.classList.remove('station-changing');
+                    if (stationInfo) stationInfo.classList.remove('station-changing');
+                }, 250);
+            } else {
+                updateDisplay();
+                
+                // Only play audio if it's not Love Radio without a choice
+                if (index !== 3 || userLoveChoice) {
+                    await playStationAudioSafely(index);
+                }
+            }
         }
 
-        const audio = new Audio(audioFile);
-        audio.volume = 0.7;
-
-        audio.addEventListener('error', (e) => {
-            console.error(`❌ Love Radio audio error for ${audioFile}:`, e);
-            alert(`Cannot load Love Radio audio: ${audioFile}`);
-        });
-
-        audio.play().then(() => {
-            console.log(`✅ Love Radio playing: ${audioFile}`);
-            currentMainAudio     = audio;
-            isMainRadioPlaying   = true;
-            updatePlayButtonState(true);
-            document.querySelector('.radio-display')?.classList.add('playing');
-        }).catch((e) => {
-            console.error(`❌ Love Radio play failed for ${audioFile}:`, e);
-            alert(`Cannot play Love Radio audio!\n\nFile: ${audioFile}\nError: ${e.message}`);
-        });
+        function updateStationKnobPosition(stationIndex) {
+    // Each station is 90 degrees apart (0°, 90°, 180°, 270°)
+    homeKnobRotation = stationIndex * 90;
+    
+    const homeTuningKnob = document.getElementById('homeTuningKnob');
+    if (homeTuningKnob) {
+        const knobInner = homeTuningKnob.querySelector('.knob-inner');
+        if (knobInner) {
+            knobInner.style.transform = `rotate(${homeKnobRotation}deg)`;
         }
-
-
-        // Enhanced station switching with animations and audio
-       function switchToStation (index, withAnimation = true) {
-  if (index < 0 || index >= stations.length) return;
-
-  // pick the right station object
-  const station = stations[index];
-
-  /* adapt Love Radio’s metadata on the fly ------------- */
-  if (index === 3 && userLoveChoice) {
-    station.track  = 'Our Choice in Love';
-    station.artist = 'Naz – Radio Istanbul Nights';
-    station.audioFile =
-        userLoveChoice === 'beingLoved' ? 'audio/naz1.mp3'
-                                         : 'audio/naz2.mp3';
-  }
-
-  /* helper that actually draws UI + starts playback ----- */
-  const render = () => {
-    updateStationDisplay(station, index);
-    baseHeights = buildBaseSpectrum(index + 1);
-    animateSpectrum();
-
-    /* ALWAYS play the new station ---------------------- */
-    stopAllAudio();                    // ensure silence first
-    if (index === 3 && userLoveChoice) playLoveRadioAudio();
-    else                               playStationAudio(index);
-  };
-
-  /* animated or instant? ------------------------------- */
-  if (withAnimation) {
-    const radioInfo   = document.querySelector('.radio-info');
-    const stationInfo = document.querySelector('.station-info');
-    radioInfo.classList.add('station-changing');
-    stationInfo.classList.add('station-changing');
-    setTimeout(() => {
-      render();
-      radioInfo.classList.remove('station-changing');
-      stationInfo.classList.remove('station-changing');
-    }, 250);
-  } else {
-    render();
-  }
+    }
 }
 
         function updateStationDisplay(station, index) {
             // Update frequency and station info
-            document.querySelector('.frequency').textContent = station.freq;
-            document.querySelector('.station-name').textContent = station.name;
-            document.querySelector('.now-playing').textContent = `♪ Now Playing: ${station.track} ♪`;
+            const frequencyEl = document.querySelector('.frequency');
+            const stationNameEl = document.querySelector('.station-name');
+            const nowPlayingEl = document.querySelector('.now-playing');
+            
+            if (frequencyEl) frequencyEl.textContent = station.freq;
+            if (stationNameEl) stationNameEl.textContent = station.name;
+            if (nowPlayingEl) nowPlayingEl.textContent = `♪ Now Playing: ${station.track} ♪`;
             
             // Update track info
-            document.querySelector('.track-title').textContent = station.track;
-            document.querySelector('.artist-name').textContent = station.artist;
-            document.querySelector('.album-name').textContent = station.album;
+            const trackTitleEl = document.querySelector('.track-title');
+            const artistNameEl = document.querySelector('.artist-name');
+            const albumNameEl = document.querySelector('.album-name');
+            
+            if (trackTitleEl) trackTitleEl.textContent = station.track;
+            if (artistNameEl) artistNameEl.textContent = station.artist;
+            if (albumNameEl) albumNameEl.textContent = station.album;
             
             // Update radio stats
-            document.querySelector('.radio-stats .stat-line:nth-child(1) .stat-value').textContent = station.freq.replace(' FM', ' MHz');
-            document.querySelector('.radio-stats .stat-line:nth-child(2) .stat-value').textContent = station.mode;
+            const freqStatEl = document.querySelector('.radio-stats .stat-line:nth-child(1) .stat-value');
+            const modeStatEl = document.querySelector('.radio-stats .stat-line:nth-child(2) .stat-value');
+            
+            if (freqStatEl) freqStatEl.textContent = station.freq.replace(' FM', ' MHz');
+            if (modeStatEl) modeStatEl.textContent = station.mode;
             
             // Update signal strength
             updateSignalStrength(station.signal);
@@ -404,30 +376,37 @@ function playStationAudioDirect(audioFile) {
         }
 
         // Enhanced tuning knob functionality
-        function updateKnobRotation(angle) {
-            const knobIndicator = document.querySelector('.knob-indicator');
-            if (knobIndicator) {
-                knobIndicator.style.transform = `translateX(-50%) rotate(${angle}deg)`;
-            }
-            
-            // Update spectrum tuning indicator position based on current frequency
-            updateSpectrumIndicator();
-        }
+function updateKnobRotation(angle) {
+    const knobIndicator = document.querySelector('.knob-indicator');
+    const knobInner = document.querySelector('.knob-inner');
+    
+    // Instead of rotating just the indicator, rotate the entire inner knob
+    // This makes the pointer and orange center rotate together as one unit
+    if (knobInner) {
+        knobInner.style.transform = `rotate(${angle}deg)`;
+    }
+    
+    // Update spectrum tuning indicator position based on current frequency
+    updateSpectrumIndicator();
+}
 
         // Separate function for home tuning knob rotation
-        function updateHomeTuningKnob() {
-            const homeTuningKnob = document.getElementById('homeTuningKnob');
-            if (homeTuningKnob) {
-                homeKnobRotation += 45; // Rotate 45 degrees each station change
-                homeTuningKnob.style.transform = `rotate(${homeKnobRotation}deg)`;
-                
-                // Add a subtle animation effect
-                homeTuningKnob.style.transition = 'transform 0.3s ease';
-                setTimeout(() => {
-                    homeTuningKnob.style.transition = '';
-                }, 300);
-            }
+function updateHomeTuningKnob() {
+    const homeTuningKnob = document.getElementById('homeTuningKnob');
+    if (homeTuningKnob) {
+        homeKnobRotation += 90; // Rotate 90 degrees for each station (more realistic)
+        
+        // Rotate the inner knob element, not the container
+        const knobInner = homeTuningKnob.querySelector('.knob-inner');
+        if (knobInner) {
+            knobInner.style.transform = `rotate(${homeKnobRotation}deg)`;
+            knobInner.style.transition = 'transform 0.3s ease';
+            setTimeout(() => {
+                knobInner.style.transition = '';
+            }, 300);
         }
+    }
+}
 
         // Update spectrum indicator position based on current frequency
         function updateSpectrumIndicator() {
@@ -492,8 +471,8 @@ function playStationAudioDirect(audioFile) {
             }
             
             let scanIndex = 0;
-            scanInterval = setInterval(() => {
-                switchToStation(scanIndex, true);
+            scanInterval = setInterval(async () => {
+                await switchToStation(scanIndex, true);
                 updateActivePreset(scanIndex);
                 scanIndex = (scanIndex + 1) % stations.length;
             }, 2000); // Switch every 2 seconds
@@ -515,11 +494,6 @@ function playStationAudioDirect(audioFile) {
         // Initialize radio
         function initializeRadio() {
             console.log('🎛️ Initializing radio...');
-            
-            // Test audio files first
-            console.log('🧪 Testing audio file accessibility...');
-            const audioFiles = ['naz1.mp3', 'naz2.mp3', 'salem.mp3', 'iqra.mp3', 'abdelrahman.mp3'];
-            audioFiles.forEach(file => testAudioFile(file));
             
             generateSpectrum();
             baseHeights = buildBaseSpectrum(currentStationIndex + 1);
@@ -578,28 +552,6 @@ function playStationAudioDirect(audioFile) {
           };
         }
 
-        // build one jagged profile for "seed"
-        function buildBaseSpectrum(seed) {
-          const rand = RNG(seed);
-          const bars = document.querySelectorAll('.spectrum-bar').length;
-          let h     = 40 + rand() * 20;
-          const prof = [];
-
-          // 1) random walk
-          for (let i = 0; i < bars; i++) {
-            h += (rand() - 0.5) * 18;
-            h  = Math.max(10, Math.min(90, h));
-            prof.push(h);
-          }
-
-          // 2) one simple blur pass
-          return prof.map((v,i) => {
-            const p = prof[i-1] || v;
-            const n = prof[i+1] || v;
-            return (p + v*2 + n) / 4;
-          });
-        }
-
         const frequencies = [88.1, 88.3, 88.5, 88.7, 88.9, 89.1];
         const storyData = {
             88.1: { title: "Romantic Love", subtitle: '"Two hearts, one rhythm"' },
@@ -613,14 +565,16 @@ function playStationAudioDirect(audioFile) {
         // Update display function with radio effects
         function updateDisplay(freq) {
             const story = storyData[freq];
-            infoDisplay.innerHTML = `
-                <div class="frequency-header">
-                    <span class="frequency-badge-display">FM ${freq}</span>
-                    <span class="now-playing">NOW PLAYING</span>
-                </div>
-                <div class="story-title">${story.title}</div>
-                <div class="story-subtitle">${story.subtitle}</div>
-            `;
+            if (infoDisplay) {
+                infoDisplay.innerHTML = `
+                    <div class="frequency-header">
+                        <span class="frequency-badge-display">FM ${freq}</span>
+                        <span class="now-playing">NOW PLAYING</span>
+                    </div>
+                    <div class="story-title">${story.title}</div>
+                    <div class="story-subtitle">${story.subtitle}</div>
+                `;
+            }
 
             // Update signal strength based on frequency
             updateSignalStrength(freq);
@@ -706,13 +660,13 @@ function playStationAudioDirect(audioFile) {
             const nowPlayingElement = document.querySelector('.now-playing');
             
             if (isPlaying) {
-                radio.classList.add('playing');
-                nowPlayingElement.textContent = 'NOW PLAYING';
-                radioWaves.style.opacity = '1';
+                if (radio) radio.classList.add('playing');
+                if (nowPlayingElement) nowPlayingElement.textContent = 'NOW PLAYING';
+                if (radioWaves) radioWaves.style.opacity = '1';
             } else {
-                radio.classList.remove('playing');
-                nowPlayingElement.textContent = 'PAUSED';
-                radioWaves.style.opacity = '0.3';
+                if (radio) radio.classList.remove('playing');
+                if (nowPlayingElement) nowPlayingElement.textContent = 'PAUSED';
+                if (radioWaves) radioWaves.style.opacity = '0.3';
             }
         }
 
@@ -739,24 +693,27 @@ function playStationAudioDirect(audioFile) {
             });
 
             // Show volume indicator temporarily
-            volumeIndicator.style.opacity = '1';
-            setTimeout(() => {
-                volumeIndicator.style.opacity = '0';
-            }, 2000);
+            if (volumeIndicator) {
+                volumeIndicator.style.opacity = '1';
+                setTimeout(() => {
+                    volumeIndicator.style.opacity = '0';
+                }, 2000);
+            }
         }
 
         function startRadio() {
             isActive = true;
 
             // Fade transitions with radio startup effect
-            introText.style.opacity = '0';
-            cardsContainer.style.opacity = '1';
-
-            setTimeout(() => {
-                introText.style.display = 'none';
-            }, 1000);
-
-            radioWaves.style.opacity = '1';
+            if (introText) {
+                introText.style.opacity = '0';
+                setTimeout(() => {
+                    introText.style.display = 'none';
+                }, 1000);
+            }
+            
+            if (cardsContainer) cardsContainer.style.opacity = '1';
+            if (radioWaves) radioWaves.style.opacity = '1';
 
             // Initialize display and highlight
             updateDisplay(currentFreq);
@@ -773,61 +730,65 @@ function playStationAudioDirect(audioFile) {
         }
 
         // Enhanced tuning knob interaction
-        tuningKnob.addEventListener('click', function() {
-            if (!isActive) startRadio();
+        if (tuningKnob) {
+            tuningKnob.addEventListener('click', function() {
+                if (!isActive) startRadio();
 
-            const currentIndex = frequencies.indexOf(currentFreq);
-            const nextIndex = (currentIndex + 1) % frequencies.length;
-            currentFreq = frequencies[nextIndex];
+                const currentIndex = frequencies.indexOf(currentFreq);
+                const nextIndex = (currentIndex + 1) % frequencies.length;
+                currentFreq = frequencies[nextIndex];
 
-            currentRotation += 60;
-            this.style.transform = `rotate(${currentRotation}deg)`;
+                currentRotation += 60;
+                this.style.transform = `rotate(${currentRotation}deg)`;
 
-            // Brief static before new station
-            setTimeout(() => {
-                updateDisplay(currentFreq);
-                highlightStory(currentFreq);
-            }, 150);
-        });
+                // Brief static before new station
+                setTimeout(() => {
+                    updateDisplay(currentFreq);
+                    highlightStory(currentFreq);
+                }, 150);
+            });
 
-        // Add double-click for play/pause
-        tuningKnob.addEventListener('dblclick', function() {
-            if (!isActive) return;
-            togglePlayback();
-        });
+            // Add double-click for play/pause
+            tuningKnob.addEventListener('dblclick', function() {
+                if (!isActive) return;
+                togglePlayback();
+            });
+        }
 
         // Enhanced volume knob interaction
-        volumeKnob.addEventListener('click', function() {
-            volumeRotation += 45;
-            this.style.transform = `rotate(${volumeRotation}deg)`;
+        if (volumeKnob) {
+            volumeKnob.addEventListener('click', function() {
+                volumeRotation += 45;
+                this.style.transform = `rotate(${volumeRotation}deg)`;
 
-            // First click starts playback, subsequent clicks adjust volume
-            if (!isActive) {
-                startRadio();
-                togglePlayback();
-            } else {
-                // Cycle volume level (0-5)
-                volumeLevel = (volumeLevel + 1) % 6;
-                
-                // Update audio volume if audio is available
-                if (currentAudio) {
-                    currentAudio.volume = volumeLevel / 5;
+                // First click starts playback, subsequent clicks adjust volume
+                if (!isActive) {
+                    startRadio();
+                    togglePlayback();
+                } else {
+                    // Cycle volume level (0-5)
+                    volumeLevel = (volumeLevel + 1) % 6;
+                    
+                    // Update audio volume if audio is available
+                    if (currentAudio) {
+                        currentAudio.volume = volumeLevel / 5;
+                    }
                 }
-            }
 
-            // Update visual indicators
-            updateVolumeIndicator();
+                // Update visual indicators
+                updateVolumeIndicator();
 
-            // Adjust radio waves opacity based on volume
-            const waveOpacity = volumeLevel * 0.2;
-            radioWaves.style.opacity = Math.max(waveOpacity, 0.1);
+                // Adjust radio waves opacity based on volume
+                const waveOpacity = volumeLevel * 0.2;
+                if (radioWaves) radioWaves.style.opacity = Math.max(waveOpacity, 0.1);
 
-            // Visual feedback
-            this.style.boxShadow = '0 0 15px rgba(255, 107, 53, 0.8)';
-            setTimeout(() => {
-                this.style.boxShadow = '';
-            }, 200);
-        });
+                // Visual feedback
+                this.style.boxShadow = '0 0 15px rgba(255, 107, 53, 0.8)';
+                setTimeout(() => {
+                    this.style.boxShadow = '';
+                }, 200);
+            });
+        }
 
         function highlightStory(freq) {
             storyCards.forEach(card => {
@@ -850,7 +811,7 @@ function playStationAudioDirect(audioFile) {
                     currentFreq = freq;
                     const index = frequencies.indexOf(freq);
                     currentRotation = index * 60;
-                    tuningKnob.style.transform = `rotate(${currentRotation}deg)`;
+                    if (tuningKnob) tuningKnob.style.transform = `rotate(${currentRotation}deg)`;
 
                     // Simulate tuning delay
                     setTimeout(() => {
@@ -891,7 +852,7 @@ function playStationAudioDirect(audioFile) {
             switch(e.key) {
                 case 'ArrowUp':
                 case 'ArrowRight':
-                    tuningKnob.click();
+                    if (tuningKnob) tuningKnob.click();
                     break;
                 case 'ArrowDown':
                 case 'ArrowLeft':
@@ -900,7 +861,7 @@ function playStationAudioDirect(audioFile) {
                     const prevIndex = currentIndex === 0 ? frequencies.length - 1 : currentIndex - 1;
                     currentFreq = frequencies[prevIndex];
                     currentRotation -= 60;
-                    tuningKnob.style.transform = `rotate(${currentRotation}deg)`;
+                    if (tuningKnob) tuningKnob.style.transform = `rotate(${currentRotation}deg)`;
                     setTimeout(() => {
                         updateDisplay(currentFreq);
                         highlightStory(currentFreq);
@@ -908,7 +869,7 @@ function playStationAudioDirect(audioFile) {
                     break;
                 case ' ': // Spacebar
                     e.preventDefault();
-                    volumeKnob.click();
+                    if (volumeKnob) volumeKnob.click();
                     break;
             }
         });
@@ -940,55 +901,34 @@ function playStationAudioDirect(audioFile) {
             };
 
             // Listen for loadedmetadata to get actual duration
-            player.audio.addEventListener('loadedmetadata', () => {
-                player.duration = player.audio.duration;
-                updateTimeDisplay(player);
-                console.log(`Player ${playerId}: Loaded metadata. Duration: ${player.duration}`);
-            });
+            if (player.audio) {
+                player.audio.addEventListener('loadedmetadata', () => {
+                    player.duration = player.audio.duration;
+                    updateTimeDisplay(player);
+                    console.log(`Player ${playerId}: Loaded metadata. Duration: ${player.duration}`);
+                });
 
-            // Listen for timeupdate to update progress bar
-            player.audio.addEventListener('timeupdate', () => {
-                player.currentTime = player.audio.currentTime;
-                console.log(`Player ${playerId}: timeupdate - currentTime: ${player.currentTime}, duration: ${player.duration}`);
-                updateProgressBar(player);
-                updateTimeDisplay(player);
-            });
+                // Listen for timeupdate to update progress bar
+                player.audio.addEventListener('timeupdate', () => {
+                    player.currentTime = player.audio.currentTime;
+                    updateProgressBar(player);
+                    updateTimeDisplay(player);
+                });
 
-            // Listen for audio ending
-            player.audio.addEventListener('ended', () => {
-                pauseTeamPlayer(player);
-                player.currentTime = 0;
-                updateProgressBar(player);
-                updateTimeDisplay(player);
-                console.log(`Player ${playerId}: Audio ended.`);
-            });
+                // Listen for audio ending
+                player.audio.addEventListener('ended', () => {
+                    pauseTeamPlayer(player);
+                    player.currentTime = 0;
+                    updateProgressBar(player);
+                    updateTimeDisplay(player);
+                    console.log(`Player ${playerId}: Audio ended.`);
+                });
 
-            // Add error listener for audio element
-            player.audio.addEventListener('error', (e) => {
-                console.error(`Player ${playerId}: Audio error!`, e);
-                switch (e.target.error.code) {
-                    case e.target.error.MEDIA_ERR_ABORTED:
-                        console.error(`Player ${playerId}: You aborted the audio playback.`);
-                        break;
-                    case e.target.error.MEDIA_ERR_NETWORK:
-                        console.error(`Player ${playerId}: A network error caused the audio download to fail.`);
-                        break;
-                    case e.target.error.MEDIA_ERR_DECODE:
-                        console.error(`Player ${playerId}: The audio playback was aborted due to a corruption problem or because the media used features your browser does not support.`);
-                        break;
-                    case e.target.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                        console.error(`Player ${playerId}: The audio could not be loaded, either because the server or network failed or because the format is not supported.`);
-                        break;
-                    default:
-                        console.error(`Player ${playerId}: An unknown audio error occurred.`);
-                        break;
-                }
-            });
-
-            // Add play listener for audio element
-            player.audio.addEventListener('play', () => {
-                console.log(`Player ${playerId}: Audio started playing.`);
-            });
+                // Add error listener for audio element
+                player.audio.addEventListener('error', (e) => {
+                    console.error(`Player ${playerId}: Audio error!`, e);
+                });
+            }
 
             teamPlayers.set(playerId, player);
             setupTeamPlayerEvents(player, playerId);
@@ -997,9 +937,15 @@ function playStationAudioDirect(audioFile) {
 
         function setupTeamPlayerEvents(player, playerId) {
             // Play/Pause
-            player.playBtn.addEventListener('click', () => {
+            // Play/Pause
+// Play/Pause
+        if (player.playBtn) {
+            player.playBtn.addEventListener('click', async () => {
+                // Check if THIS player is currently playing before stopping everything
+                const wasPlaying = player.isPlaying;
+                
                 // Stop main radio first
-                stopAllAudio();
+                await stopAllAudioCompletely();
                 
                 // Pause all other team players
                 teamPlayers.forEach((otherPlayer, otherId) => {
@@ -1008,112 +954,122 @@ function playStationAudioDirect(audioFile) {
                     }
                 });
 
-                if (player.isPlaying) {
+                // Now use the original state to decide what to do
+                if (wasPlaying) {
+                    // Player was playing, so keep it paused (don't restart)
                     pauseTeamPlayer(player);
                 } else {
+                    // Player was not playing, so start it
                     playTeamPlayer(player);
                 }
             });
+        }
 
             // Previous
-            player.prevBtn.addEventListener('click', () => {
-                console.log(`Player ${playerId}: Previous button clicked`);
-                // Stop current player
-                if (player.isPlaying) {
-                    pauseTeamPlayer(player);
-                }
+            if (player.prevBtn) {
+                player.prevBtn.addEventListener('click', () => {
+                    console.log(`Player ${playerId}: Previous button clicked`);
+                    // Stop current player
+                    if (player.isPlaying) {
+                        pauseTeamPlayer(player);
+                    }
 
-                // Find and start previous player
-                const currentId = parseInt(playerId);
-                const prevIndex = (currentId - 1 - 1 + teamPlayers.size) % teamPlayers.size; // 0-based index
-                const prevId = (prevIndex + 1).toString(); // 1-based ID
-                console.log(`Player ${playerId}: Calculated previous player ID: ${prevId}`);
-                const prevPlayer = teamPlayers.get(prevId);
-                
-                if (prevPlayer) {
-                    console.log(`Player ${playerId}: Found previous player: ${prevId}`);
-                    // Add pop animation
-                    prevPlayer.element.classList.add('pop-animation');
+                    // Find and start previous player
+                    const currentId = parseInt(playerId);
+                    const prevIndex = (currentId - 1 - 1 + teamPlayers.size) % teamPlayers.size; // 0-based index
+                    const prevId = (prevIndex + 1).toString(); // 1-based ID
+                    console.log(`Player ${playerId}: Calculated previous player ID: ${prevId}`);
+                    const prevPlayer = teamPlayers.get(prevId);
                     
-                    // Remove animation after it completes
-                    setTimeout(() => {
-                        prevPlayer.element.classList.remove('pop-animation');
-                    }, 600);
-                    
-                    // Start playing the previous player after a short delay
-                    setTimeout(() => {
-                        prevPlayer.currentTime = 0; // Reset current time for the new track
-                        playTeamPlayer(prevPlayer);
-                    }, 200);
-                } else {
-                    console.log(`Player ${playerId}: Previous player ${prevId} not found.`);
-                }
-            });
+                    if (prevPlayer) {
+                        console.log(`Player ${playerId}: Found previous player: ${prevId}`);
+                        // Add pop animation
+                        prevPlayer.element.classList.add('pop-animation');
+                        
+                        // Remove animation after it completes
+                        setTimeout(() => {
+                            prevPlayer.element.classList.remove('pop-animation');
+                        }, 600);
+                        
+                        // Start playing the previous player after a short delay
+                        setTimeout(() => {
+                            prevPlayer.currentTime = 0; // Reset current time for the new track
+                            playTeamPlayer(prevPlayer);
+                        }, 200);
+                    } else {
+                        console.log(`Player ${playerId}: Previous player ${prevId} not found.`);
+                    }
+                });
+            }
 
             // Next
-            player.nextBtn.addEventListener('click', () => {
-                console.log(`Player ${playerId}: Next button clicked`);
-                // Stop current player
-                if (player.isPlaying) {
-                    pauseTeamPlayer(player);
-                }
+            if (player.nextBtn) {
+                player.nextBtn.addEventListener('click', () => {
+                    console.log(`Player ${playerId}: Next button clicked`);
+                    // Stop current player
+                    if (player.isPlaying) {
+                        pauseTeamPlayer(player);
+                    }
 
-                // Find and start next player
-                const currentId = parseInt(playerId);
-                const nextId = ((currentId % teamPlayers.size) + 1).toString(); // Corrected logic for cycling through players
-                console.log(`Player ${playerId}: Calculated next player ID: ${nextId}`);
-                const nextPlayer = teamPlayers.get(nextId);
-                
-                if (nextPlayer) {
-                    console.log(`Player ${playerId}: Found next player: ${nextId}`);
-                    // Add pop animation
-                    nextPlayer.element.classList.add('pop-animation');
+                    // Find and start next player
+                    const currentId = parseInt(playerId);
+                    const nextId = ((currentId % teamPlayers.size) + 1).toString(); // Corrected logic for cycling through players
+                    console.log(`Player ${playerId}: Calculated next player ID: ${nextId}`);
+                    const nextPlayer = teamPlayers.get(nextId);
                     
-                    // Remove animation after it completes
-                    setTimeout(() => {
-                        nextPlayer.element.classList.remove('pop-animation');
-                    }, 600);
-                    
-                    // Start playing the next player after a short delay
-                    setTimeout(() => {
-                        nextPlayer.currentTime = 0; // Reset current time for the new track
-                        playTeamPlayer(nextPlayer);
-                    }, 200);
-                } else {
-                    console.log(`Player ${playerId}: Next player ${nextId} not found.`);
-                }
-            });
+                    if (nextPlayer) {
+                        console.log(`Player ${playerId}: Found next player: ${nextId}`);
+                        // Add pop animation
+                        nextPlayer.element.classList.add('pop-animation');
+                        
+                        // Remove animation after it completes
+                        setTimeout(() => {
+                            nextPlayer.element.classList.remove('pop-animation');
+                        }, 600);
+                        
+                        // Start playing the next player after a short delay
+                        setTimeout(() => {
+                            nextPlayer.currentTime = 0; // Reset current time for the new track
+                            playTeamPlayer(nextPlayer);
+                        }, 200);
+                    } else {
+                        console.log(`Player ${playerId}: Next player ${nextId} not found.`);
+                    }
+                });
+            }
 
             // Progress bar
-            player.progressBar.addEventListener('click', (e) => {
-                const rect = player.progressBar.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const newTime = (clickX / rect.width) * player.duration;
-                
-                // Smoothly update the progress bar
-                player.progressFill.style.transition = 'width 0.1s linear';
-                player.currentTime = newTime;
-                player.audio.currentTime = newTime;
-                updateProgressBar(player);
-                updateTimeDisplay(player);
-            });
+            if (player.progressBar) {
+                player.progressBar.addEventListener('click', (e) => {
+                    const rect = player.progressBar.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const newTime = (clickX / rect.width) * player.duration;
+                    
+                    // Smoothly update the progress bar
+                    player.progressFill.style.transition = 'width 0.1s linear';
+                    player.currentTime = newTime;
+                    if (player.audio) player.audio.currentTime = newTime;
+                    updateProgressBar(player);
+                    updateTimeDisplay(player);
+                });
 
-            // Add touch support for mobile devices
-            player.progressBar.addEventListener('touchstart', handleTouch);
-            player.progressBar.addEventListener('touchmove', handleTouch);
-            
-            function handleTouch(e) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const rect = player.progressBar.getBoundingClientRect();
-                const clickX = touch.clientX - rect.left;
-                const newTime = (clickX / rect.width) * player.duration;
+                // Add touch support for mobile devices
+                player.progressBar.addEventListener('touchstart', handleTouch);
+                player.progressBar.addEventListener('touchmove', handleTouch);
                 
-                player.progressFill.style.transition = 'width 0.1s linear';
-                player.currentTime = newTime;
-                player.audio.currentTime = newTime;
-                updateProgressBar(player);
-                updateTimeDisplay(player);
+                function handleTouch(e) {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const rect = player.progressBar.getBoundingClientRect();
+                    const clickX = touch.clientX - rect.left;
+                    const newTime = (clickX / rect.width) * player.duration;
+                    
+                    player.progressFill.style.transition = 'width 0.1s linear';
+                    player.currentTime = newTime;
+                    if (player.audio) player.audio.currentTime = newTime;
+                    updateProgressBar(player);
+                    updateTimeDisplay(player);
+                }
             }
         }
 
@@ -1122,7 +1078,7 @@ function playStationAudioDirect(audioFile) {
             player.element.classList.add('playing');
             console.log(`Player ${player.element.dataset.player}: playTeamPlayer called, isPlaying: ${player.isPlaying}`);
             updatePlayButton(player);
-            player.audio.play();
+            if (player.audio) player.audio.play();
         }
 
         function pauseTeamPlayer(player) {
@@ -1130,22 +1086,24 @@ function playStationAudioDirect(audioFile) {
             player.element.classList.remove('playing');
             console.log(`Player ${player.element.dataset.player}: pauseTeamPlayer called, isPlaying: ${player.isPlaying}`);
             updatePlayButton(player);
-            player.audio.pause();
+            if (player.audio) player.audio.pause();
         }
 
         function updatePlayButton(player) {
             console.log(`Player ${player.element.dataset.player}: updatePlayButton called, isPlaying: ${player.isPlaying}`);
-            if (player.isPlaying) {
-                player.playBtn.textContent = '⏸';
-                console.log(`Player ${player.element.dataset.player}: Displaying pause icon`);
-            } else {
-                player.playBtn.textContent = '▶';
-                console.log(`Player ${player.element.dataset.player}: Displaying play icon`);
+            if (player.playBtn) {
+                if (player.isPlaying) {
+                    player.playBtn.textContent = '⏸';
+                    console.log(`Player ${player.element.dataset.player}: Displaying pause icon`);
+                } else {
+                    player.playBtn.textContent = '▶';
+                    console.log(`Player ${player.element.dataset.player}: Displaying play icon`);
+                }
             }
         }
 
         function updateProgressBar(player) {
-            if (player.duration > 0) {
+            if (player.duration > 0 && player.progressFill) {
                 const progress = (player.currentTime / player.duration) * 100;
                 player.progressFill.style.width = `${Math.min(progress, 100)}%`;
                 console.log(`Player ${player.element.dataset.player}: Progress bar width set to ${player.progressFill.style.width}`);
@@ -1153,8 +1111,8 @@ function playStationAudioDirect(audioFile) {
         }
 
         function updateTimeDisplay(player) {
-            player.currentTimeEl.textContent = formatTime(player.currentTime);
-            if (player.duration > 0) {
+            if (player.currentTimeEl) player.currentTimeEl.textContent = formatTime(player.currentTime);
+            if (player.totalTimeEl && player.duration > 0) {
                 const remaining = Math.max(0, player.duration - player.currentTime);
                 player.totalTimeEl.textContent = '-' + formatTime(remaining);
             }
@@ -1171,41 +1129,23 @@ function playStationAudioDirect(audioFile) {
             console.log('🚀 DOM loaded, initializing...');
             initializeRadio();
             
-            // Audio Test Button
-const testBtn = document.getElementById('audioTestBtn');
-if (testBtn) {
-  testBtn.addEventListener('click', () => {
-    const statusEl = document.getElementById('audioStatus');
-    statusEl.textContent = '🧪 Testing…';
-
-    // ✎ the rest of your testing code stays the same
-    const testAudio = new Audio('salem.mp3');
-    testAudio.volume = 0.5;
-
-    testAudio.addEventListener('canplay', () => {
-      statusEl.textContent = '✅ Audio files OK!';
-      statusEl.style.color = 'green';
-    });
-
-    testAudio.addEventListener('error', () => {
-      statusEl.textContent = '❌ Audio files not found!';
-      statusEl.style.color = 'red';
-    });
-
-    testAudio.play().then(() => setTimeout(() => testAudio.pause(), 1000));
-  });
-}            
             // Play button with enhanced audio functionality
-            document.querySelector('.play-button').addEventListener('click', function () {
-                // first human interaction boots the radio
-                if (!isActive) startRadio();
+            const playButton = document.querySelector('.play-button');
+            if (playButton) {
+                playButton.addEventListener('click', async function () {
+                    // Initialize audio context on first interaction
+                    if (!audioContextInitialized) {
+                        audioContextInitialized = true;
+                        if (!isActive) startRadio();
+                    }
 
-                // tiny press animation
-                this.style.transform = 'scale(0.95)';
-                setTimeout(() => { this.style.transform = ''; }, 150);
+                    // tiny press animation
+                    this.style.transform = 'scale(0.95)';
+                    setTimeout(() => { this.style.transform = ''; }, 150);
 
-                toggleMainRadioPlayback();
-            });
+                    await toggleMainRadioPlayback();
+                });
+            }
 
             // Scan button
             const scanBtn = document.querySelector('.scan-btn');
@@ -1219,64 +1159,75 @@ if (testBtn) {
                 });
             }
 
-            // Preset buttons
-/* ───────── NEW ───────── */
-document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
-        if (!isActive) startRadio();     // ensure user gesture has started audio
+            // Preset buttons with FIXED AUDIO LOGIC
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    if (!audioContextInitialized) {
+                        audioContextInitialized = true;
+                        if (!isActive) startRadio();
+                    }
 
-        const presetIndex = parseInt(this.dataset.preset, 10);
+                    const presetIndex = parseInt(this.dataset.preset, 10);
 
-        /* LOVE RADIO (button 4) opens the modal, nothing else */
-        if (this.id === 'preset4') {
-            stopAllAudio();                                // silence anything
-            const loveModal = document.getElementById('loveModal');
-            loveModal.classList.add('show');
-            loveModal.querySelector('.modal-content').classList.add('pulse');
-            return;
-        }
+                    // LOVE RADIO (button 4) - SPECIAL HANDLING
+                    if (this.id === 'preset4') {
+                        await stopAllAudioCompletely(); // Ensure complete silence
+                        currentStationIndex = 3; // Set to station 4
+                        updateActivePreset(3); // Update visual state
+                        
+                        // Show modal without any audio
+                        const loveModal = document.getElementById('loveModal');
+                        if (loveModal) {
+                            loveModal.classList.add('show');
+                            const modalContent = loveModal.querySelector('.modal-content');
+                            if (modalContent) modalContent.classList.add('pulse');
+                        }
+                        return;
+                    }
 
-        /* regular presets 1-3 */
-        currentStationIndex = presetIndex;
+                    // Regular presets 1-3 - ALWAYS PLAY AUDIO
+                    currentStationIndex = presetIndex;
 
-        homeKnobRotation = presetIndex * 45;
-        document.getElementById('homeTuningKnob').style.transform =
-            `rotate(${homeKnobRotation}deg)`;
+                    homeKnobRotation = presetIndex * 45;
+                    const homeTuningKnob = document.getElementById('homeTuningKnob');
+                    if (homeTuningKnob) {
+                        homeTuningKnob.style.transform = `rotate(${homeKnobRotation}deg)`;
+                    }
 
-        switchToStation(presetIndex);
-        stopScanning();
-    });
-});
+                    await switchToStation(presetIndex);
+                    stopScanning();
+                });
+            });
 
-            // Handle love modal choices
+            // Handle love modal choices with PROPER AUDIO MANAGEMENT
             document.querySelectorAll('.choice-btn').forEach(choiceBtn => {
-                choiceBtn.addEventListener('click', function() {
+                choiceBtn.addEventListener('click', async function() {
                     const answer = this.dataset.answer;
                     const loveModal = document.getElementById('loveModal');
-                    const modalContent = loveModal.querySelector('.modal-content');
+                    const modalContent = loveModal?.querySelector('.modal-content');
                     
                     // Store the user's choice
                     userLoveChoice = answer;
+                    console.log(`💕 User chose: ${answer}`);
                     
                     // Remove pulse animation
-                    modalContent.classList.remove('pulse');
+                    if (modalContent) modalContent.classList.remove('pulse');
                     
                     // Add selection feedback
                     this.style.background = 'linear-gradient(135deg, #ff6b35, #ff8c42)';
                     this.style.color = 'white';
                     this.style.transform = 'scale(1.05)';
                     
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         // Hide the modal with animation
-                        loveModal.classList.remove('show');
+                        if (loveModal) loveModal.classList.remove('show');
                         
-                        // Now switch to station 4 (index 3) with all visual updates
-                        setTimeout(() => {
-                            // Make sure we're switching to station 4
+                        // Now switch to station 4 with audio
+                        setTimeout(async () => {
                             currentStationIndex = 3;
                             
                             // Update knob rotation to position 4
-                            homeKnobRotation = currentStationIndex * 45;
+                            homeKnobRotation = 3 * 45;
                             const homeTuningKnob = document.getElementById('homeTuningKnob');
                             if (homeTuningKnob) {
                                 homeTuningKnob.style.transform = `rotate(${homeKnobRotation}deg)`;
@@ -1286,96 +1237,155 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
                                 }, 300);
                             }
                             
-                            // Update active preset to show button 4 as selected
-                            updateActivePreset(currentStationIndex);
-                            
-                            // Switch to station 4 with animation and audio
-                            switchToStation(currentStationIndex, true);
+                            // Update active preset and switch with audio
+                            updateActivePreset(3);
+                            await switchToStation(3, true); // This will now play audio because userLoveChoice is set
                             stopScanning();
                         }, 400);
                         
-                        // Log the user's choice
-                        console.log(`User chose: ${answer} - Switching to Station 4 with corresponding audio`);
-                        
-                    }, 800); // Wait for user to see their selection
+                    }, 800);
                 });
             });
 
-            // Simple tuning knob click (no dragging)
+            function setupEnhancedKnobInteraction() {
+    const homeTuningKnob = document.getElementById('homeTuningKnob');
+    if (!homeTuningKnob) return;
+
+    let isDragging = false;
+    let startAngle = 0;
+    let startRotation = 0;
+
+    // Mouse down - start drag
+    homeTuningKnob.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        const rect = this.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        startRotation = homeKnobRotation;
+        
+        // Add visual feedback
+        this.style.transform = 'scale(0.95)';
+        document.body.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+
+    // Mouse move - drag rotation
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        
+        const rect = homeTuningKnob.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        
+        let deltaAngle = (currentAngle - startAngle) * (180 / Math.PI);
+        let newRotation = startRotation + deltaAngle;
+        
+        // Constrain rotation to realistic range
+        newRotation = Math.max(0, Math.min(270, newRotation));
+        
+        // Snap to nearest station position
+        const stationAngle = Math.round(newRotation / 90) * 90;
+        const targetStation = stationAngle / 90;
+        
+        if (targetStation !== currentStationIndex && targetStation >= 0 && targetStation < stations.length) {
+            switchToStation(targetStation, false);
+        }
+    });
+
+    // Mouse up - end drag
+    document.addEventListener('mouseup', function() {
+        if (!isDragging) return;
+        
+        isDragging = false;
+        document.body.style.cursor = '';
+        homeTuningKnob.style.transform = '';
+    });
+
+    // Mouse wheel support for fine tuning
+    homeTuningKnob.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const direction = e.deltaY > 0 ? 1 : -1;
+        const nextStationIndex = Math.max(0, Math.min(stations.length - 1, currentStationIndex + direction));
+        
+        if (nextStationIndex !== currentStationIndex) {
+            switchToStation(nextStationIndex, true);
+        }
+    });
+}
+
+
+            // Tuning knob click with FIXED LOGIC
             const homeTuningKnob = document.getElementById('homeTuningKnob');
             if (homeTuningKnob) {
-                homeTuningKnob.addEventListener('click', function () {
-    if (!isActive) startRadio();     // unlock autoplay on first twist
-    stopAllAudio();                  // stop current track immediately
+                homeTuningKnob.addEventListener('click', async function () {
+                    if (!audioContextInitialized) {
+                        audioContextInitialized = true;
+                        if (!isActive) startRadio();
+                    }
 
-    const nextStationIndex = (currentStationIndex + 1) % stations.length;
-
-    /* LOVE RADIO position → show modal instead of tuning */
-    if (nextStationIndex === 3) {
-        const loveModal = document.getElementById('loveModal');
-        loveModal.classList.add('show');
-        loveModal.querySelector('.modal-content').classList.add('pulse');
-
-        currentStationIndex = nextStationIndex;
-        updateHomeTuningKnob();
-        updateActivePreset(currentStationIndex);
-        return;
-    }
-
-    /* normal tuning */
-    currentStationIndex = nextStationIndex;
-    updateHomeTuningKnob();
-    switchToStation(currentStationIndex);
-    stopScanning();
-});}
-            // Navigation buttons
-            const nextBtn = document.querySelector('.next-btn');
-            if (nextBtn) {
-                nextBtn.addEventListener('click', function() {
                     const nextStationIndex = (currentStationIndex + 1) % stations.length;
-                    
-                    // Special handling when reaching position 4 (index 3)
+
+                    // LOVE RADIO position → show modal instead of playing audio
                     if (nextStationIndex === 3) {
-                        // Show the love modal instead of switching station
-                        const loveModal = document.getElementById('loveModal');
-                        loveModal.classList.add('show');
-                        
-                        // Add pulse animation to draw attention
-                        const modalContent = loveModal.querySelector('.modal-content');
-                        modalContent.classList.add('pulse');
-                        
-                        // Still update the visual knob rotation and preset highlight
+                        await stopAllAudioCompletely();
                         currentStationIndex = nextStationIndex;
                         updateHomeTuningKnob();
                         updateActivePreset(currentStationIndex);
                         
-                        return; // Don't proceed with normal station switching
+                        const loveModal = document.getElementById('loveModal');
+                        if (loveModal) {
+                            loveModal.classList.add('show');
+                            const modalContent = loveModal.querySelector('.modal-content');
+                            if (modalContent) modalContent.classList.add('pulse');
+                        }
+                        return;
                     }
-                    
-                    // Normal behavior for other positions
+
+                    // Normal tuning with audio
                     currentStationIndex = nextStationIndex;
                     updateHomeTuningKnob();
-                    switchToStation(currentStationIndex);
+                    await switchToStation(currentStationIndex);
+                    stopScanning();
+                });
+            }
+
+            // Navigation buttons with FIXED LOGIC
+            const nextBtn = document.querySelector('.next-btn');
+            if (nextBtn) {
+                nextBtn.addEventListener('click', async function() {
+                    const nextStationIndex = (currentStationIndex + 1) % stations.length;
+                    
+                    if (nextStationIndex === 3) {
+                        await stopAllAudioCompletely();
+                        currentStationIndex = nextStationIndex;
+                        updateHomeTuningKnob();
+                        updateActivePreset(currentStationIndex);
+                        
+                        const loveModal = document.getElementById('loveModal');
+                        if (loveModal) {
+                            loveModal.classList.add('show');
+                            const modalContent = loveModal.querySelector('.modal-content');
+                            if (modalContent) modalContent.classList.add('pulse');
+                        }
+                        return;
+                    }
+                    
+                    currentStationIndex = nextStationIndex;
+                    updateHomeTuningKnob();
+                    await switchToStation(currentStationIndex);
                     stopScanning();
                 });
             }
 
             const prevBtn = document.querySelector('.prev-btn');
             if (prevBtn) {
-                prevBtn.addEventListener('click', function() {
+                prevBtn.addEventListener('click', async function() {
                     const prevStationIndex = (currentStationIndex - 1 + stations.length) % stations.length;
                     
-                    // Special handling when reaching position 4 (index 3)
                     if (prevStationIndex === 3) {
-                        // Show the love modal instead of switching station
-                        const loveModal = document.getElementById('loveModal');
-                        loveModal.classList.add('show');
-                        
-                        // Add pulse animation to draw attention
-                        const modalContent = loveModal.querySelector('.modal-content');
-                        modalContent.classList.add('pulse');
-                        
-                        // Still update the visual knob rotation and preset highlight
+                        await stopAllAudioCompletely();
                         currentStationIndex = prevStationIndex;
                         homeKnobRotation = prevStationIndex * 45;
                         const homeTuningKnob = document.getElementById('homeTuningKnob');
@@ -1388,12 +1398,17 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
                         }
                         updateActivePreset(currentStationIndex);
                         
-                        return; // Don't proceed with normal station switching
+                        const loveModal = document.getElementById('loveModal');
+                        if (loveModal) {
+                            loveModal.classList.add('show');
+                            const modalContent = loveModal.querySelector('.modal-content');
+                            if (modalContent) modalContent.classList.add('pulse');
+                        }
+                        return;
                     }
                     
-                    // Normal behavior for other positions
                     currentStationIndex = prevStationIndex;
-                    homeKnobRotation -= 45; // Rotate backwards
+                    homeKnobRotation -= 45;
                     const homeTuningKnob = document.getElementById('homeTuningKnob');
                     if (homeTuningKnob) {
                         homeTuningKnob.style.transform = `rotate(${homeKnobRotation}deg)`;
@@ -1402,7 +1417,7 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
                             homeTuningKnob.style.transition = '';
                         }, 300);
                     }
-                    switchToStation(currentStationIndex);
+                    await switchToStation(currentStationIndex);
                     stopScanning();
                 });
             }
@@ -1458,17 +1473,6 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
                             });
                         }
                     }
-                });
-            });
-        });
-
-        // Add CSS transition when audio ends
-        document.addEventListener('DOMContentLoaded', function() {
-            // Listen for when main radio audio ends
-            document.querySelectorAll('#home audio, #ideation audio').forEach(audio => {
-                audio.addEventListener('ended', () => {
-                    isMainRadioPlaying = false;
-                    updatePlayButtonState(false);
                 });
             });
         });
